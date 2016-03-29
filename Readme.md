@@ -1,9 +1,15 @@
 Dapper - a simple object mapper for .Net
 ========================================
 
+Release Notes
+-------------
+
+[link](http://stackexchange.github.io/dapper-dot-net/)
+
+
 Features
 --------
-Dapper is a [single file](https://github.com/SamSaffron/dapper-dot-net/blob/master/Dapper%20NET40/SqlMapper.cs) you can drop in to your project that will extend your IDbConnection interface.
+Dapper is a [NuGet library](https://www.nuget.org/packages/Dapper) that you can add in to your project that will extend your `IDbConnection` interface.
 
 It provides 3 helpers:
 
@@ -124,7 +130,7 @@ The performance tests are broken in to 3 lists:
 	<tr>
 		<td>Hand coded (using a <code>SqlDataReader</code>)</td>
 		<td>47ms</td>
-		<td rowspan="9"><a href="http://www.toptensoftware.com/Articles/94/PetaPoco-More-Speed">Can be faster</a></td>
+		<td rowspan="9"><a href="http://www.toptensoftware.com/blog/posts/94-PetaPoco-More-Speed">Can be faster</a></td>
 	</tr>
 	<tr>
 		<td>Dapper <code>ExecuteMapperQuery<Post></code></td>
@@ -174,7 +180,7 @@ The performance tests are broken in to 3 lists:
 		<td rowspan="3">&nbsp;</td>
 	</tr>
 	<tr>
-		<td><a href="https://github.com/robconery/massive">Massive</a></td>
+		<td><a href="https://github.com/FransBouma/Massive">Massive</a></td>
 		<td>52ms</td>
 	</tr>
 	<tr>
@@ -219,9 +225,11 @@ The performance tests are broken in to 3 lists:
 	</tr>
 </table>
 
-Performance benchmarks are available [here](https://github.com/SamSaffron/dapper-dot-net/blob/master/Tests/PerformanceTests.cs)
+Performance benchmarks are available [here](https://github.com/StackExchange/dapper-dot-net/blob/master/Dapper.Tests/PerformanceTests.cs).
 
-Feel free to submit patches that include other ORMs - when running benchmarks, be sure to compile in Release and not attach a debugger (ctrl F5)
+Feel free to submit patches that include other ORMs - when running benchmarks, be sure to compile in Release and not attach a debugger (ctrl F5).
+
+Alternatively, you might prefer Frans Bouma's [RawDataAccessBencher](https://github.com/FransBouma/RawDataAccessBencher) test suite.
 
 Parameterized queries
 ---------------------
@@ -330,7 +338,7 @@ Dapper supports varchar params, if you are executing a where clause on a varchar
 Query<Thing>("select * from Thing where Name = @Name", new {Name = new DbString { Value = "abcde", IsFixedLength = true, Length = 10, IsAnsi = true });
 ```
 
-On Sql Server it is crucial to use the unicode when querying unicode and ansi when querying non unicode.
+On SQL Server it is crucial to use the unicode when querying unicode and ansi when querying non unicode.
 
 Limitations and caveats
 ---------------------
@@ -346,12 +354,12 @@ Dapper has no DB specific implementation details, it works across all .NET ADO p
 
 Do you have a comprehensive list of examples?
 ---------------------
-Dapper has a comprehensive test suite in the [test project](https://github.com/SamSaffron/dapper-dot-net/blob/master/Tests/Tests.cs)
+Dapper has a comprehensive test suite in the [test project](https://github.com/StackExchange/dapper-dot-net/blob/master/Dapper.Tests/Tests.cs)
 
 Who is using this?
 ---------------------
 Dapper is in production use at:
 
-[Stack Overflow](http://stackoverflow.com/), [helpdesk](http://www.jitbit.com/helpdesk-software/)
+[Stack Overflow](http://stackoverflow.com/), [helpdesk](https://www.jitbit.com/web-helpdesk/)
 
 (if you would like to be listed here let me know)

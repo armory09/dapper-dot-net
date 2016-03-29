@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Data.Common;
 using System.Linq;
 
-namespace Dapper.Rainbow
+namespace Dapper
 {
-    public abstract class SqlCompactDatabase<TDatabase> : Database<TDatabase>, IDisposable where TDatabase : Database<TDatabase>, new()
+    public abstract class SqlCompactDatabase<TDatabase> : Database<TDatabase> where TDatabase : Database<TDatabase>, new()
     {
         public class SqlCompactTable<T> : Table<T>
         {
@@ -26,9 +26,9 @@ namespace Dapper.Rainbow
                 paramNames.Remove("Id");
 
                 string cols = string.Join(",", paramNames);
-                string cols_params = string.Join(",", paramNames.Select(p => "@" + p));
+                string colsParams = string.Join(",", paramNames.Select(p => "@" + p));
 
-                var sql = "insert " + TableName + " (" + cols + ") values (" + cols_params + ")";
+                var sql = "insert " + TableName + " (" + cols + ") values (" + colsParams + ")";
                 if (database.Execute(sql, o) != 1)
                 {
                     return null;

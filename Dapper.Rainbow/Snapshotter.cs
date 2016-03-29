@@ -1,12 +1,6 @@
-﻿/*
- License: http://www.apache.org/licenses/LICENSE-2.0 
- Home page: http://code.google.com/p/dapper-dot-net/
-*/
-
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Web;
 using System.Reflection;
 using System.Reflection.Emit;
 
@@ -64,28 +58,30 @@ namespace Dapper
 
             static List<PropertyInfo> RelevantProperties()
             {
-                return typeof(T).GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                return typeof(T).GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
                     .Where(p =>
-                        p.GetSetMethod() != null &&
-                        p.GetGetMethod() != null &&
-                        (p.PropertyType.IsValueType ||
-                            p.PropertyType == typeof(string) ||
-                            (p.PropertyType.IsGenericType && p.PropertyType.GetGenericTypeDefinition() == typeof(Nullable<>)))
+                        p.GetSetMethod(true) != null &&
+                        p.GetGetMethod(true) != null &&
+                        (p.PropertyType == typeof(string) ||
+                         p.PropertyType.IsValueType() ||
+                         (p.PropertyType.IsGenericType() && p.PropertyType.GetGenericTypeDefinition() == typeof(Nullable<>)))
                         ).ToList();
             }
 
-
+            // This is used by IL, ReSharper is wrong.
+            // ReSharper disable UnusedMember.Local
             private static bool AreEqual<U>(U first, U second)
             {
                 if (first == null && second == null) return true;
-                if (first == null && second != null) return false;
+                if (first == null) return false;
                 return first.Equals(second);
             }
+            // ReSharper restore UnusedMember.Local
 
             private static Func<T, T, List<Change>> GenerateDiffer()
             {
 
-                var dm = new DynamicMethod("DoDiff", typeof(List<Change>), new Type[] { typeof(T), typeof(T) }, true);
+                var dm = new DynamicMethod("DoDiff", typeof(List<Change>), new[] { typeof(T), typeof(T) }, true);
 
                 var il = dm.GetILGenerator();
                 // change list
@@ -102,11 +98,11 @@ namespace Dapper
                     // []
                     il.Emit(OpCodes.Ldarg_0);
                     // [original]
-                    il.Emit(OpCodes.Callvirt, prop.GetGetMethod());
+                    il.Emit(OpCodes.Callvirt, prop.GetGetMethod(true));
                     // [original prop val]
                     il.Emit(OpCodes.Ldarg_1);
                     // [original prop val, current]
-                    il.Emit(OpCodes.Callvirt, prop.GetGetMethod());
+                    il.Emit(OpCodes.Callvirt, prop.GetGetMethod(true));
                     // [original prop val, current prop val]
 
                     il.Emit(OpCodes.Dup);
@@ -171,7 +167,6 @@ namespace Dapper
             // adapted from http://stackoverflow.com/a/966466/17174
             private static Func<T, T> GenerateCloner()
             {
-                Delegate myExec = null;
                 var dm = new DynamicMethod("DoClone", typeof(T), new Type[] { typeof(T) }, true);
                 var ctor = typeof(T).GetConstructor(new Type[] { });
 
@@ -188,9 +183,9 @@ namespace Dapper
                     // [clone]
                     il.Emit(OpCodes.Ldarg_0);
                     // [clone, source]
-                    il.Emit(OpCodes.Callvirt, prop.GetGetMethod());
+                    il.Emit(OpCodes.Callvirt, prop.GetGetMethod(true));
                     // [clone, source val]
-                    il.Emit(OpCodes.Callvirt, prop.GetSetMethod());
+                    il.Emit(OpCodes.Callvirt, prop.GetSetMethod(true));
                     // []
                 }
 
@@ -199,11 +194,10 @@ namespace Dapper
                 // Return constructed object.   --> 0 items on stack
                 il.Emit(OpCodes.Ret);
 
-                myExec = dm.CreateDelegate(typeof(Func<T, T>));
+                var myExec = dm.CreateDelegate(typeof(Func<T, T>));
 
                 return (Func<T, T>)myExec;
             }
         }
     }
 }
-
