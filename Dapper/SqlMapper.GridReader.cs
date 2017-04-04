@@ -2,12 +2,7 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
-
-#if COREFX
-using IDbCommand = System.Data.Common.DbCommand;
-using IDataReader = System.Data.Common.DbDataReader;
-#endif
-
+using System.Globalization;
 namespace Dapper
 {
     partial class SqlMapper
@@ -166,7 +161,7 @@ namespace Dapper
                     cache.Deserializer = deserializer;
                 }
                 IsConsumed = true;
-                var result = ReadDeferred<T>(gridIndex, deserializer.Func, typedIdentity);
+                var result = ReadDeferred<T>(gridIndex, deserializer.Func, typedIdentity, type);
                 return buffered ? result.ToList() : result;
             }
 
@@ -189,8 +184,16 @@ namespace Dapper
                         deserializer = new DeserializerState(hash, GetDeserializer(type, reader, 0, -1, false));
                         cache.Deserializer = deserializer;
                     }
-                    result = (T) deserializer.Func(reader);
-                    if ((row & Row.Single) != 0 && reader.Read()) ThrowMultipleRows(row);                    while (reader.Read()) { }
+                    object val = deserializer.Func(reader);
+                    if(val == null || val is T)
+                    {
+                        result = (T)val;
+                    } else {
+                        var convertToType = Nullable.GetUnderlyingType(type) ?? type;
+                        result = (T)Convert.ChangeType(val, convertToType, CultureInfo.InvariantCulture);
+                    }
+                    if ((row & Row.Single) != 0 && reader.Read()) ThrowMultipleRows(row);
+                    while (reader.Read()) { }
                 }
                 else if((row & Row.FirstOrDefault) == 0) // demanding a row, and don't have one
                 {
@@ -212,6 +215,9 @@ namespace Dapper
                     typeof(TSixth),
                     typeof(TSeventh)
                 }, gridIndex);
+
+                IsConsumed = true;
+
                 try
                 {
                     foreach (var r in MultiMapImpl<TFirst, TSecond, TThird, TFourth, TFifth, TSixth, TSeventh, TReturn>(null, default(CommandDefinition), func, splitOn, reader, identity, false))
@@ -302,13 +308,19 @@ namespace Dapper
                 return buffered ? result.ToList() : result;
             }
 
-            private IEnumerable<T> ReadDeferred<T>(int index, Func<IDataReader, object> deserializer, Identity typedIdentity)
+            private IEnumerable<T> ReadDeferred<T>(int index, Func<IDataReader, object> deserializer, Identity typedIdentity, Type effectiveType)
             {
                 try
                 {
+                    var convertToType = Nullable.GetUnderlyingType(effectiveType) ?? effectiveType;
                     while (index == gridIndex && reader.Read())
                     {
-                        yield return (T)deserializer(reader);
+                        object val = deserializer(reader);
+                        if (val == null || val is T) {
+                            yield return (T)val;
+                        } else {
+                            yield return (T)Convert.ChangeType(val, convertToType, CultureInfo.InvariantCulture);
+                        }
                     }
                 }
                 finally // finally so that First etc progresses things even when multiple rows

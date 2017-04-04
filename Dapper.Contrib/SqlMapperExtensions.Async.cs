@@ -1,19 +1,13 @@
 ﻿#if ASYNC
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using Dapper;
 
-#if COREFX
-using IDbTransaction = System.Data.Common.DbTransaction;
-using IDbConnection = System.Data.Common.DbConnection;
-using DataException = System.InvalidOperationException;
-#else
-using System.Data;
-#endif
 
 namespace Dapper.Contrib.Extensions
 {
@@ -433,6 +427,28 @@ public partial class SQLiteAdapter
         idp.SetValue(entityToInsert, Convert.ChangeType(id, idp.PropertyType), null);
 
         return id;
+    }
+}
+
+public partial class FbAdapter
+{
+    public async Task<int> InsertAsync(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, string tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
+    {
+        var cmd = $"insert into {tableName} ({columnList}) values ({parameterList})";
+        await connection.ExecuteAsync(cmd, entityToInsert, transaction, commandTimeout);
+
+        var propertyInfos = keyProperties as PropertyInfo[] ?? keyProperties.ToArray();
+        var keyName = propertyInfos.First().Name;
+        var r = await connection.QueryAsync($"SELECT FIRST 1 {keyName} ID FROM {tableName} ORDER BY {keyName} DESC", transaction: transaction, commandTimeout: commandTimeout);
+
+        var id = r.First().ID;
+        if (id == null) return 0;
+        if (!propertyInfos.Any()) return Convert.ToInt32(id);
+
+        var idp = propertyInfos.First();
+        idp.SetValue(entityToInsert, Convert.ChangeType(id, idp.PropertyType), null);
+
+        return Convert.ToInt32(id);
     }
 }
 #endif

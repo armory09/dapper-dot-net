@@ -9,13 +9,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-#if COREFX
-using IDbTransaction = System.Data.Common.DbTransaction;
-using IDbConnection = System.Data.Common.DbConnection;
-using IDbCommand = System.Data.Common.DbCommand;
-using IDataReader = System.Data.Common.DbDataReader;
-#endif
-
 namespace Dapper
 {
     public static partial class SqlMapper
@@ -175,9 +168,23 @@ namespace Dapper
         /// <summary>
         /// Execute a single-row query asynchronously using .NET 4.5 Task.
         /// </summary>
+        public static Task<T> QueryFirstAsync<T>(this IDbConnection cnn, CommandDefinition command)
+        {
+            return QueryRowAsync<T>(cnn, Row.First, typeof(T), command);
+        }
+        /// <summary>
+        /// Execute a single-row query asynchronously using .NET 4.5 Task.
+        /// </summary>
         public static Task<object> QueryFirstOrDefaultAsync(this IDbConnection cnn, Type type, CommandDefinition command)
         {
             return QueryRowAsync<object>(cnn, Row.FirstOrDefault, type, command);
+        }
+        /// <summary>
+        /// Execute a single-row query asynchronously using .NET 4.5 Task.
+        /// </summary>
+        public static Task<T> QueryFirstOrDefaultAsync<T>(this IDbConnection cnn, CommandDefinition command)
+        {
+            return QueryRowAsync<T>(cnn, Row.FirstOrDefault, typeof(T), command);
         }
         /// <summary>
         /// Execute a single-row query asynchronously using .NET 4.5 Task.
@@ -189,16 +196,29 @@ namespace Dapper
         /// <summary>
         /// Execute a single-row query asynchronously using .NET 4.5 Task.
         /// </summary>
+        public static Task<T> QuerySingleAsync<T>(this IDbConnection cnn, CommandDefinition command)
+        {
+            return QueryRowAsync<T>(cnn, Row.Single, typeof(T), command);
+        }
+        /// <summary>
+        /// Execute a single-row query asynchronously using .NET 4.5 Task.
+        /// </summary>
         public static Task<object> QuerySingleOrDefaultAsync(this IDbConnection cnn, Type type, CommandDefinition command)
         {
             return QueryRowAsync<object>(cnn, Row.SingleOrDefault, type, command);
         }
-
+        /// <summary>
+        /// Execute a single-row query asynchronously using .NET 4.5 Task.
+        /// </summary>
+        public static Task<T> QuerySingleOrDefaultAsync<T>(this IDbConnection cnn, CommandDefinition command)
+        {
+            return QueryRowAsync<T>(cnn, Row.SingleOrDefault, typeof(T), command);
+        }
 
         private static Task<DbDataReader> ExecuteReaderWithFlagsFallbackAsync(DbCommand cmd, bool wasClosed, CommandBehavior behavior, CancellationToken cancellationToken)
         {
             var task = cmd.ExecuteReaderAsync(GetBehavior(wasClosed, behavior), cancellationToken);
-            if (task.Status == TaskStatus.Faulted && DisableCommandBehaviorOptimizations(behavior, task.Exception.InnerException))
+            if (task.Status == TaskStatus.Faulted && Settings.DisableCommandBehaviorOptimizations(behavior, task.Exception.InnerException))
             { // we can retry; this time it will have different flags
                 task = cmd.ExecuteReaderAsync(GetBehavior(wasClosed, behavior), cancellationToken);
             }
@@ -784,7 +804,7 @@ namespace Dapper
         /// <returns>An <see cref="IDataReader"/> that can be used to iterate over the results of the SQL query.</returns>
         /// <remarks>
         /// This is typically used when the results of a query are not processed by Dapper, for example, used to fill a <see cref="DataTable"/>
-        /// or <see cref="DataSet"/>.
+        /// or <see cref="T:DataSet"/>.
         /// </remarks>
         /// <example>
         /// <code>
@@ -811,7 +831,7 @@ namespace Dapper
         /// <returns>An <see cref="IDataReader"/> that can be used to iterate over the results of the SQL query.</returns>
         /// <remarks>
         /// This is typically used when the results of a query are not processed by Dapper, for example, used to fill a <see cref="DataTable"/>
-        /// or <see cref="DataSet"/>.
+        /// or <see cref="T:DataSet"/>.
         /// </remarks>
         public static Task<IDataReader> ExecuteReaderAsync(this IDbConnection cnn, CommandDefinition command)
         {

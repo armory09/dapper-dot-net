@@ -6,10 +6,7 @@ using System.Data.Common;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-#if COREFX
-using IDbCommand = System.Data.Common.DbCommand;
-using IDataReader = System.Data.Common.DbDataReader;
-#endif
+
 namespace Dapper
 {
     partial class SqlMapper
@@ -184,7 +181,7 @@ namespace Dapper
                 }
                 else
                 {
-                    var result = ReadDeferred<T>(gridIndex, deserializer.Func, typedIdentity);
+                    var result = ReadDeferred<T>(gridIndex, deserializer.Func, typedIdentity, type);
                     if (buffered) result = result.ToList(); // for the "not a DbDataReader" scenario
                     return Task.FromResult(result);
                 }

@@ -3,18 +3,6 @@
  Home page: https://github.com/StackExchange/dapper-dot-net
  */
 
-#if COREFX
-using IDbDataParameter = System.Data.Common.DbParameter;
-using IDataParameter = System.Data.Common.DbParameter;
-using IDbTransaction = System.Data.Common.DbTransaction;
-using IDbConnection = System.Data.Common.DbConnection;
-using IDbCommand = System.Data.Common.DbCommand;
-using IDataReader = System.Data.Common.DbDataReader;
-using IDataRecord = System.Data.Common.DbDataReader;
-using IDataParameterCollection = System.Data.Common.DbParameterCollection;
-using DataException = System.InvalidOperationException;
-#endif
-
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -30,6 +18,10 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Xml;
 using System.Xml.Linq;
+
+#if COREFX
+using DataException = System.InvalidOperationException;
+#endif
 
 namespace Dapper
 {
@@ -130,7 +122,7 @@ namespace Dapper
         }
 
         /// <summary>
-        /// Return a count of all the cached queries by dapper
+        /// Return a count of all the cached queries by Dapper
         /// </summary>
         /// <returns></returns>
         public static int GetCachedSQLCount()
@@ -139,7 +131,7 @@ namespace Dapper
         }
 
         /// <summary>
-        /// Return a list of all the queries cached by dapper
+        /// Return a list of all the queries cached by Dapper
         /// </summary>
         /// <param name="ignoreHitCountAbove"></param>
         /// <returns></returns>
@@ -235,15 +227,15 @@ namespace Dapper
             typeHandlers = new Dictionary<Type, ITypeHandler>();
 #if !COREFX
             AddTypeHandlerImpl(typeof(DataTable), new DataTableHandler(), clone);
-            AddTypeHandlerImpl(typeof(XmlDocument), new XmlDocumentHandler(), clone);
-            AddTypeHandlerImpl(typeof(XDocument), new XDocumentHandler(), clone);
-            AddTypeHandlerImpl(typeof(XElement), new XElementHandler(), clone);
             try // see https://github.com/StackExchange/dapper-dot-net/issues/424
             {
                 AddSqlDataRecordsTypeHandler(clone);
-            } catch { }
-            allowedCommandBehaviors = DefaultAllowedCommandBehaviors;
+            }
+            catch { }
 #endif
+            AddTypeHandlerImpl(typeof(XmlDocument), new XmlDocumentHandler(), clone);
+            AddTypeHandlerImpl(typeof(XDocument), new XDocumentHandler(), clone);
+            AddTypeHandlerImpl(typeof(XElement), new XElementHandler(), clone);
         }
 #if !COREFX
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -265,6 +257,22 @@ namespace Dapper
             if (snapshot.TryGetValue(type, out oldValue) && oldValue == dbType) return; // nothing to do
 
             var newCopy = new Dictionary<Type, DbType>(snapshot) { [type] = dbType };
+            typeMap = newCopy;
+        }
+
+        /// <summary>
+        /// Removes the specified type from the Type/DbType mapping table
+        /// </summary>
+        public static void RemoveTypeMap(Type type)
+        {
+            // use clone, mutate, replace to avoid threading issues
+            var snapshot = typeMap;
+
+            if (!snapshot.ContainsKey(type)) return; // nothing to do
+
+            var newCopy = new Dictionary<Type, DbType>(snapshot);
+            newCopy.Remove(type);
+
             typeMap = newCopy;
         }
 
@@ -360,6 +368,10 @@ namespace Dapper
             return LookupDbType(value.GetType(), "n/a", false, out handler);
 
         }
+
+        /// <summary>
+        /// OBSOLETE: For internal usage only. Lookup the DbType and handler for a given Type and member
+        /// </summary>
         [Obsolete(ObsoleteInternalUsageOnly, false)]
 #if !COREFX
         [Browsable(false)]
@@ -560,7 +572,7 @@ namespace Dapper
         /// <returns>An <see cref="IDataReader"/> that can be used to iterate over the results of the SQL query.</returns>
         /// <remarks>
         /// This is typically used when the results of a query are not processed by Dapper, for example, used to fill a <see cref="DataTable"/>
-        /// or <see cref="DataSet"/>.
+        /// or <see cref="T:DataSet"/>.
         /// </remarks>
         /// <example>
         /// <code>
@@ -589,7 +601,7 @@ namespace Dapper
         /// <returns>An <see cref="IDataReader"/> that can be used to iterate over the results of the SQL query.</returns>
         /// <remarks>
         /// This is typically used when the results of a query are not processed by Dapper, for example, used to fill a <see cref="DataTable"/>
-        /// or <see cref="DataSet"/>.
+        /// or <see cref="T:DataSet"/>.
         /// </remarks>
         public static IDataReader ExecuteReader(this IDbConnection cnn, CommandDefinition command)
         {
@@ -603,7 +615,7 @@ namespace Dapper
         /// <returns>An <see cref="IDataReader"/> that can be used to iterate over the results of the SQL query.</returns>
         /// <remarks>
         /// This is typically used when the results of a query are not processed by Dapper, for example, used to fill a <see cref="DataTable"/>
-        /// or <see cref="DataSet"/>.
+        /// or <see cref="T:DataSet"/>.
         /// </remarks>
         public static IDataReader ExecuteReader(this IDbConnection cnn, CommandDefinition command, CommandBehavior commandBehavior)
         {
@@ -810,7 +822,7 @@ namespace Dapper
         /// Executes a query, returning the data typed as per T
         /// </summary>
         /// <remarks>the dynamic param may seem a bit odd, but this works around a major usability issue in vs, if it is Object vs completion gets annoying. Eg type new [space] get new object</remarks>
-        /// <returns>A sequence of data of the supplied type; if a basic type (int, string, etc) is queried then the data from the first column in assumed, otherwise an instance is
+        /// <returns>A single instance or null of the supplied type; if a basic type (int, string, etc) is queried then the data from the first column in assumed, otherwise an instance is
         /// created per row, and a direct column-name===member-name mapping is assumed (case insensitive).
         /// </returns>
         public static T QueryFirst<T>(this IDbConnection cnn, CommandDefinition command)
@@ -821,7 +833,7 @@ namespace Dapper
         /// Executes a query, returning the data typed as per T
         /// </summary>
         /// <remarks>the dynamic param may seem a bit odd, but this works around a major usability issue in vs, if it is Object vs completion gets annoying. Eg type new [space] get new object</remarks>
-        /// <returns>A sequence of data of the supplied type; if a basic type (int, string, etc) is queried then the data from the first column in assumed, otherwise an instance is
+        /// <returns>A single or null instance of the supplied type; if a basic type (int, string, etc) is queried then the data from the first column in assumed, otherwise an instance is
         /// created per row, and a direct column-name===member-name mapping is assumed (case insensitive).
         /// </returns>
         public static T QueryFirstOrDefault<T>(this IDbConnection cnn, CommandDefinition command)
@@ -832,7 +844,7 @@ namespace Dapper
         /// Executes a query, returning the data typed as per T
         /// </summary>
         /// <remarks>the dynamic param may seem a bit odd, but this works around a major usability issue in vs, if it is Object vs completion gets annoying. Eg type new [space] get new object</remarks>
-        /// <returns>A sequence of data of the supplied type; if a basic type (int, string, etc) is queried then the data from the first column in assumed, otherwise an instance is
+        /// <returns>A single instance of the supplied type; if a basic type (int, string, etc) is queried then the data from the first column in assumed, otherwise an instance is
         /// created per row, and a direct column-name===member-name mapping is assumed (case insensitive).
         /// </returns>
         public static T QuerySingle<T>(this IDbConnection cnn, CommandDefinition command)
@@ -843,7 +855,7 @@ namespace Dapper
         /// Executes a query, returning the data typed as per T
         /// </summary>
         /// <remarks>the dynamic param may seem a bit odd, but this works around a major usability issue in vs, if it is Object vs completion gets annoying. Eg type new [space] get new object</remarks>
-        /// <returns>A sequence of data of the supplied type; if a basic type (int, string, etc) is queried then the data from the first column in assumed, otherwise an instance is
+        /// <returns>A single instance of the supplied type; if a basic type (int, string, etc) is queried then the data from the first column in assumed, otherwise an instance is
         /// created per row, and a direct column-name===member-name mapping is assumed (case insensitive).
         /// </returns>
         public static T QuerySingleOrDefault<T>(this IDbConnection cnn, CommandDefinition command)
@@ -914,7 +926,7 @@ namespace Dapper
             }
             catch (ArgumentException ex)
             { // thanks, Sqlite!
-                if (DisableCommandBehaviorOptimizations(behavior, ex))
+                if (Settings.DisableCommandBehaviorOptimizations(behavior, ex))
                 {
                     // we can retry; this time it will have different flags
                     return cmd.ExecuteReader(GetBehavior(wasClosed, behavior));
@@ -1326,25 +1338,10 @@ namespace Dapper
                 }
             }
         }
-        const CommandBehavior DefaultAllowedCommandBehaviors = ~((CommandBehavior)0);
-        static CommandBehavior allowedCommandBehaviors = DefaultAllowedCommandBehaviors;
-        private static bool DisableCommandBehaviorOptimizations(CommandBehavior behavior, Exception ex)
-        {
-            if(allowedCommandBehaviors == DefaultAllowedCommandBehaviors
-                && (behavior & (CommandBehavior.SingleResult | CommandBehavior.SingleRow)) != 0)
-            {
-                if (ex.Message.Contains(nameof(CommandBehavior.SingleResult))
-                    || ex.Message.Contains(nameof(CommandBehavior.SingleRow)))
-                { // some providers just just allow these, so: try again without them and stop issuing them
-                    allowedCommandBehaviors = ~(CommandBehavior.SingleResult | CommandBehavior.SingleRow);
-                    return true;
-                }
-            }
-            return false;
-        }
+
         private static CommandBehavior GetBehavior(bool close, CommandBehavior @default)
         {
-            return (close ? (@default | CommandBehavior.CloseConnection) : @default) & allowedCommandBehaviors;
+            return (close ? (@default | CommandBehavior.CloseConnection) : @default) & Settings.AllowedCommandBehaviors;
         }
         static IEnumerable<TReturn> MultiMapImpl<TReturn>(this IDbConnection cnn, CommandDefinition command, Type[] types, Func<object[], TReturn> map, string splitOn, IDataReader reader, Identity identity, bool finalize)
         {
@@ -1833,6 +1830,9 @@ namespace Dapper
             return intoBlock == 0 ? 0 : (padFactor - intoBlock);
         }
 
+        private static string GetInListRegex(string name, bool byPosition) => byPosition
+            ? (@"(\?)" + Regex.Escape(name) + @"\?(?!\w)(\s+(?i)unknown(?-i))?")
+            : (@"([?@:]" + Regex.Escape(name) + @")(?!\w)(\s+(?i)unknown(?-i))?");
         /// <summary>
         /// Internal use only
         /// </summary>
@@ -1855,13 +1855,20 @@ namespace Dapper
             }
             else
             {
+                bool byPosition = ShouldPassByPosition(command.CommandText);
                 var list = value as IEnumerable;
                 var count = 0;
                 bool isString = value is IEnumerable<string>;
                 bool isDbString = value is IEnumerable<DbString>;
                 DbType dbType = 0;
-                if (list != null)
+
+                int splitAt = SqlMapper.Settings.InListStringSplitCount;
+                bool viaSplit = splitAt >= 0
+                    && TryStringSplit(ref list, splitAt, namePrefix, command, byPosition);
+
+                if (list != null && !viaSplit)
                 {
+                    object lastValue = null;
                     foreach (var item in list)
                     {
                         if (++count == 1) // first item: fetch some type info
@@ -1876,24 +1883,29 @@ namespace Dapper
                                 dbType = LookupDbType(item.GetType(), "", true, out handler);
                             }
                         }
-                        var listParam = command.CreateParameter();
-                        listParam.ParameterName = namePrefix + count.ToString();
-                        if (isString)
-                        {
-                            listParam.Size = DbString.DefaultLength;
-                            if (item != null && ((string) item).Length > DbString.DefaultLength)
-                            {
-                                listParam.Size = -1;
-                            }
-                        }
+                        var nextName = namePrefix + count.ToString();
                         if (isDbString && item as DbString != null)
                         {
                             var str = item as DbString;
-                            str.AddParameter(command, listParam.ParameterName);
+                            str.AddParameter(command, nextName);
                         }
                         else
                         {
-                            listParam.Value = SanitizeParameterValue(item);
+                            var listParam = command.CreateParameter();
+                            listParam.ParameterName = nextName;
+                            if (isString)
+                            {
+                                listParam.Size = DbString.DefaultLength;
+                                if (item != null && ((string)item).Length > DbString.DefaultLength)
+                                {
+                                    listParam.Size = -1;
+                                }
+                            }
+
+                            var tmp = listParam.Value = SanitizeParameterValue(item);
+                            if (tmp != null && !(tmp is DBNull))
+                                lastValue = tmp; // only interested in non-trivial values for padding
+
                             if (listParam.DbType != dbType)
                             {
                                 listParam.DbType = dbType;
@@ -1901,75 +1913,158 @@ namespace Dapper
                             command.Parameters.Add(listParam);
                         }
                     }
-                    if (Settings.PadListExpansions && !isDbString)
+                    if (Settings.PadListExpansions && !isDbString && lastValue != null)
                     {
                         int padCount = GetListPaddingExtraCount(count);
-                        for(int i = 0; i < padCount; i++)
+                        for (int i = 0; i < padCount; i++)
                         {
                             count++;
                             var padParam = command.CreateParameter();
                             padParam.ParameterName = namePrefix + count.ToString();
                             if(isString) padParam.Size = DbString.DefaultLength;
                             padParam.DbType = dbType;
-                            padParam.Value = DBNull.Value;
+                            padParam.Value = lastValue;
                             command.Parameters.Add(padParam);
                         }
                     }
                 }
 
-                var regexIncludingUnknown = @"([?@:]" + Regex.Escape(namePrefix) + @")(?!\w)(\s+(?i)unknown(?-i))?";
-                if (count == 0)
+                
+                if(viaSplit)
                 {
-                    command.CommandText = Regex.Replace(command.CommandText, regexIncludingUnknown, match =>
-                    {
-                        var variableName = match.Groups[1].Value;
-                        if (match.Groups[2].Success)
-                        {
-                            // looks like an optimize hint; leave it alone!
-                            return match.Value;
-                        }
-                        else
-                        {
-                            return "(SELECT " + variableName + " WHERE 1 = 0)";
-                        }
-                    }, RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
-                    var dummyParam = command.CreateParameter();
-                    dummyParam.ParameterName = namePrefix;
-                    dummyParam.Value = DBNull.Value;
-                    command.Parameters.Add(dummyParam);
+                    // already done
                 }
                 else
                 {
-                    command.CommandText = Regex.Replace(command.CommandText, regexIncludingUnknown, match =>
+                    var regexIncludingUnknown = GetInListRegex(namePrefix, byPosition);
+                    if (count == 0)
                     {
-                        var variableName = match.Groups[1].Value;
-                        if (match.Groups[2].Success)
+                        command.CommandText = Regex.Replace(command.CommandText, regexIncludingUnknown, match =>
                         {
+                            var variableName = match.Groups[1].Value;
+                            if (match.Groups[2].Success)
+                            {
+                            // looks like an optimize hint; leave it alone!
+                            return match.Value;
+                            }
+                            else
+                            {
+                                return "(SELECT " + variableName + " WHERE 1 = 0)";
+                            }
+                        }, RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+                        var dummyParam = command.CreateParameter();
+                        dummyParam.ParameterName = namePrefix;
+                        dummyParam.Value = DBNull.Value;
+                        command.Parameters.Add(dummyParam);
+                    }
+                    else
+                    {
+                        command.CommandText = Regex.Replace(command.CommandText, regexIncludingUnknown, match =>
+                        {
+                            var variableName = match.Groups[1].Value;
+                            if (match.Groups[2].Success)
+                            {
                             // looks like an optimize hint; expand it
                             var suffix = match.Groups[2].Value;
 
-                            var sb = GetStringBuilder().Append(variableName).Append(1).Append(suffix);
-                            for (int i = 2; i <= count; i++)
-                            {
-                                sb.Append(',').Append(variableName).Append(i).Append(suffix);
+                                var sb = GetStringBuilder().Append(variableName).Append(1).Append(suffix);
+                                for (int i = 2; i <= count; i++)
+                                {
+                                    sb.Append(',').Append(variableName).Append(i).Append(suffix);
+                                }
+                                return sb.__ToStringRecycle();
                             }
-                            return sb.__ToStringRecycle();
-                        }
-                        else
-                        {
-                            var sb = GetStringBuilder().Append('(').Append(variableName).Append(1);
-                            for (int i = 2; i <= count; i++)
+                            else
                             {
-                                sb.Append(',').Append(variableName).Append(i);
+
+                                var sb = GetStringBuilder().Append('(').Append(variableName);
+                                if(!byPosition) sb.Append(1);
+                                for (int i = 2; i <= count; i++)
+                                {
+                                    sb.Append(',').Append(variableName);
+                                    if (!byPosition) sb.Append(i);
+                                }
+                                return sb.Append(')').__ToStringRecycle();
                             }
-                            return sb.Append(')').__ToStringRecycle();
-                        }
-                    }, RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+                        }, RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+                    }
                 }
             }
-
         }
 
+        private static bool TryStringSplit(ref IEnumerable list, int splitAt, string namePrefix, IDbCommand command, bool byPosition)
+        {
+            if (list == null || splitAt < 0) return false;
+            if (list is IEnumerable<int>) return TryStringSplit<int>(ref list, splitAt, namePrefix, command, "int", byPosition,
+                (sb, i) => sb.Append(i.ToString(CultureInfo.InvariantCulture)));
+            if (list is IEnumerable<long>) return TryStringSplit<long>(ref list, splitAt, namePrefix, command, "bigint", byPosition,
+                (sb, i) => sb.Append(i.ToString(CultureInfo.InvariantCulture)));
+            if (list is IEnumerable<short>) return TryStringSplit<short>(ref list, splitAt, namePrefix, command, "smallint", byPosition,
+                (sb, i) => sb.Append(i.ToString(CultureInfo.InvariantCulture)));            
+            if (list is IEnumerable<byte>) return TryStringSplit<byte>(ref list, splitAt, namePrefix, command, "tinyint", byPosition,
+                (sb, i) => sb.Append(i.ToString(CultureInfo.InvariantCulture)));
+            return false;
+        }
+        private static bool TryStringSplit<T>(ref IEnumerable list, int splitAt, string namePrefix, IDbCommand command, string colType, bool byPosition,
+            Action<StringBuilder, T> append)
+        {
+            ICollection<T> typed = list as ICollection<T>; 
+            if(typed == null)
+            {
+                typed = ((IEnumerable<T>)list).ToList();
+                list = typed; // because we still need to be able to iterate it, even if we fail here
+            }
+            if (typed.Count < splitAt) return false;
+            
+            string varName = null;
+            var regexIncludingUnknown = GetInListRegex(namePrefix, byPosition);
+            var sql = Regex.Replace(command.CommandText, regexIncludingUnknown, match =>
+            {
+                var variableName = match.Groups[1].Value;
+                if (match.Groups[2].Success)
+                {
+                    // looks like an optimize hint; leave it alone!
+                    return match.Value;
+                }
+                else
+                {
+                    varName = variableName;
+                    return "(select cast([value] as " + colType + ") from string_split(" + variableName + ",','))";
+                }
+            }, RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+            if (varName == null) return false; // couldn't resolve the var!
+
+            command.CommandText = sql;
+            var concatenatedParam = command.CreateParameter();
+            concatenatedParam.ParameterName = namePrefix;
+            concatenatedParam.DbType = DbType.AnsiString;
+            concatenatedParam.Size = -1;
+            string val;
+            using (var iter = typed.GetEnumerator())
+            {
+                if(iter.MoveNext())
+                {
+                    var sb = GetStringBuilder();
+                    append(sb, iter.Current);
+                    while(iter.MoveNext())
+                    {
+                        append(sb.Append(','), iter.Current);
+                    }
+                    val = sb.ToString();
+                }
+                else
+                {
+                    val = "";
+                }
+            }
+            concatenatedParam.Value = val;
+            command.Parameters.Add(concatenatedParam);
+            return true;
+        }
+
+        /// <summary>
+        /// OBSOLETE: For internal usage only. Sanitizes the paramter value with proper type casting.
+        /// </summary>
         [Obsolete(ObsoleteInternalUsageOnly, false)]
         public static object SanitizeParameterValue(object value)
         {
@@ -2001,13 +2096,13 @@ namespace Dapper
         }
         private static IEnumerable<PropertyInfo> FilterParameters(IEnumerable<PropertyInfo> parameters, string sql)
         {
-            return parameters.Where(p => Regex.IsMatch(sql, @"[?@:]" + p.Name + "([^a-z0-9_]+|$)", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant));
+            return parameters.Where(p => Regex.IsMatch(sql, @"[?@:]" + p.Name + @"([^\p{L}\p{N}_]+|$)", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant));
         }
 
         // look for ? / @ / : *by itself*
-        static readonly Regex smellsLikeOleDb = new Regex(@"(?<![a-z0-9@_])[?@:](?![a-z0-9@_])", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant | RegexOptions.Compiled),
-            literalTokens = new Regex(@"(?<![a-z0-9_])\{=([a-z0-9_]+)\}", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant | RegexOptions.Compiled),
-            pseudoPositional = new Regex(@"\?([a-z_][a-z0-9_]*)\?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+        static readonly Regex smellsLikeOleDb = new Regex(@"(?<![\p{L}\p{N}@_])[?@:](?![\p{L}\p{N}@_])", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant | RegexOptions.Compiled),
+            literalTokens = new Regex(@"(?<![\p{L}\p{N}_])\{=([\p{L}\p{N}_]+)\}", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant | RegexOptions.Compiled),
+            pseudoPositional = new Regex(@"\?([\p{L}_][\p{L}\p{N}_]*)\?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
 
 
@@ -2147,7 +2242,7 @@ namespace Dapper
             {
                 filterParams = !smellsLikeOleDb.IsMatch(identity.sql);
             }
-            var dm = new DynamicMethod($"ParamInfo{Guid.NewGuid()}", null, new[] { typeof(IDbCommand), typeof(object) }, type, true);
+            var dm = new DynamicMethod("ParamInfo" + Guid.NewGuid().ToString(), null, new[] { typeof(IDbCommand), typeof(object) }, type, true);
 
             var il = dm.GetILGenerator();
 
@@ -2807,7 +2902,7 @@ namespace Dapper
         )
         {
             var returnType = type.IsValueType() ? typeof(object) : type;
-            var dm = new DynamicMethod($"Deserialize{Guid.NewGuid()}", returnType, new[] { typeof(IDataReader) }, type, true);
+            var dm = new DynamicMethod("Deserialize" + Guid.NewGuid().ToString(), returnType, new[] { typeof(IDataReader) }, type, true);
             var il = dm.GetILGenerator();
             il.DeclareLocal(typeof(int));
             il.DeclareLocal(type);
@@ -2881,7 +2976,7 @@ namespace Dapper
                     var ctor = typeMap.FindConstructor(names, types);
                     if (ctor == null)
                     {
-                        string proposedTypes = $"({string.Join(", ", types.Select((t, i) => t.FullName + " " + names[i]).ToArray())})";
+                        string proposedTypes = "(" + string.Join(", ", types.Select((t, i) => t.FullName + " " + names[i]).ToArray()) + ")";
                         throw new InvalidOperationException($"A parameterless default constructor or one matching signature {proposedTypes} is required for {type.FullName} materialization");
                     }
 
@@ -3007,7 +3102,7 @@ namespace Dapper
                                 }
                                 else
                                 {
-                                    il.Emit(OpCodes.Unbox_Any, unboxType); // stack is now [target][target][typed-value]
+                                     il.Emit(OpCodes.Unbox_Any, unboxType); // stack is now [target][target][typed-value]
                                 }
                             }
                             else

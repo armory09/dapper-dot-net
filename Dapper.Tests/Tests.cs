@@ -1,13 +1,5 @@
 ﻿//#define POSTGRESQL // uncomment to run postgres tests
 
-#if COREFX
-using IDbCommand = System.Data.Common.DbCommand;
-using IDbDataParameter = System.Data.Common.DbParameter;
-using IDbConnection = System.Data.Common.DbConnection;
-using IDbTransaction = System.Data.Common.DbTransaction;
-using IDataReader = System.Data.Common.DbDataReader;
-#endif
-
 #if SQLITE && (NET40 || NET45)
 using SqliteConnection = System.Data.SQLite.SQLiteConnection;
 #endif
@@ -236,16 +228,19 @@ select count(1) as [Count] from #ListExpansion").IsEqualTo(4096);
         private void TestListForExpansion(List<int> list, bool enabled)
         {
             var row = connection.QuerySingle(@"
-declare @hits int;
+declare @hits int, @misses int, @count int;
+select @count = count(1) from #ListExpansion;
 select @hits = count(1) from #ListExpansion where id in @ids ;
+select @misses = count(1) from #ListExpansion where not id in @ids ;
 declare @query nvarchar(max) = N' in @ids '; -- ok, I confess to being pleased with this hack ;p
-select @hits as [Hits], @query as [Query];
+select @hits as [Hits], (@count - @misses) as [Misses], @query as [Query];
 ", new { ids = list });
-            int hits = row.Hits;
+            int hits = row.Hits, misses = row.Misses;
             string query = row.Query;
             int argCount = Regex.Matches(query, "@ids[0-9]").Count;
             int expectedCount = GetExpectedListExpansionCount(list.Count, enabled);
             hits.IsEqualTo(list.Count);
+            misses.IsEqualTo(list.Count);
             argCount.IsEqualTo(expectedCount);
         }
 
@@ -1844,60 +1839,6 @@ end");
             Dapper.SqlMapper.AddTypeMap(typeof(string), DbType.String);  // Restore Default to Unicode String
         }
 
-#if COREFX
-        class TransactedConnection : IDbConnection
-        {
-            IDbConnection _conn;
-            IDbTransaction _tran;
-
-            public TransactedConnection(IDbConnection conn, IDbTransaction tran)
-            {
-                _conn = conn;
-                _tran = tran;
-            }
-
-            public override string ConnectionString { get { return _conn.ConnectionString; } set { _conn.ConnectionString = value; } }
-            public override int ConnectionTimeout => _conn.ConnectionTimeout;
-            public override string Database => _conn.Database;
-            public override ConnectionState State => _conn.State;
-
-            protected override IDbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
-            {
-                return _tran;
-            }
-            
-            public override void ChangeDatabase(string databaseName)
-            {
-                _conn.ChangeDatabase(databaseName);
-            }
-            public override string DataSource => _conn.DataSource;
-
-            public override string ServerVersion => _conn.ServerVersion;
-
-            public override void Close()
-            {
-                _conn.Close();
-            }
-            protected override IDbCommand CreateDbCommand()
-            {
-                // The command inherits the "current" transaction.
-                var command = _conn.CreateCommand();
-                command.Transaction = _tran;
-                return command;
-            }
-
-            protected override void Dispose(bool disposing)
-            {
-                if(disposing) _conn.Dispose();
-                base.Dispose(disposing);
-            }
-
-            public override void Open()
-            {
-                _conn.Open();
-            }
-        }
-#else
         class TransactedConnection : IDbConnection
         {
             IDbConnection _conn;
@@ -1952,7 +1893,6 @@ end");
                 _conn.Open();
             }
         }
-#endif
 
         [Fact]
         public void TestDapperTableMetadataRetrieval()
@@ -2544,6 +2484,52 @@ end");
             }
         }
 
+
+        public class RecordingTypeHandler<T> : Dapper.SqlMapper.TypeHandler<T>
+        {
+            public override void SetValue(IDbDataParameter parameter, T value)
+            {
+                SetValueWasCalled = true;
+                parameter.Value = value;
+            }
+
+            public override T Parse(object value)
+            {
+                ParseWasCalled = true;
+                return (T)value;
+            }
+
+            public bool SetValueWasCalled { get; set; }
+            public bool ParseWasCalled { get; set; }
+        }
+
+        [Fact]
+        public void Test_RemoveTypeMap()
+        {
+            Dapper.SqlMapper.ResetTypeHandlers();
+            Dapper.SqlMapper.RemoveTypeMap(typeof(DateTime));
+
+            var dateTimeHandler = new RecordingTypeHandler<DateTime>();
+            Dapper.SqlMapper.AddTypeHandler(dateTimeHandler);
+
+            connection.Execute("CREATE TABLE #Test_RemoveTypeMap (x datetime NOT NULL);");
+
+            try
+            {
+                connection.Execute(@"INSERT INTO #Test_RemoveTypeMap VALUES (@Now)", new { DateTime.Now });
+                connection.Query<DateTime>("SELECT * FROM #Test_RemoveTypeMap");
+
+                dateTimeHandler.ParseWasCalled.IsTrue();
+                dateTimeHandler.SetValueWasCalled.IsTrue();
+            }
+            finally
+            {
+                connection.Execute("DROP TABLE #Test_RemoveTypeMap");
+                Dapper.SqlMapper.AddTypeMap(typeof(DateTime), DbType.DateTime); // or an option to reset type map?
+            }
+            
+        }
+
         [Fact]
         public void Issue130_IConvertible()
         {
@@ -2586,6 +2572,22 @@ end");
 #endif
         }
 
+#if ENTITY_FRAMEWORK
+        public void Issue570_DbGeo_HasValues()
+        {
+            Dapper.EntityFramework.Handlers.Register();
+            string redmond = "POINT (122.1215 47.6740)";
+            DbGeography point = DbGeography.PointFromText(redmond, DbGeography.DefaultCoordinateSystemId);
+            DbGeography orig = point.Buffer(20);
+
+
+            var fromDb = connection.QuerySingle<DbGeography>("declare @geos table(geo geography); insert @geos(geo) values(@val); select * from @geos",
+                new { val = orig });
+
+            fromDb.Area.IsNotNull();
+            fromDb.Area.IsEqualTo(orig.Area);
+        }
+#endif
         [Fact]
         public void Issue142_FailsNamedStatus()
         {
@@ -2950,8 +2952,7 @@ end");
             var delta = returned - date;
             Assert.IsTrue(delta.TotalMilliseconds >= -10 && delta.TotalMilliseconds <= 10);
         }
-
-        [FactUnlessCoreCLR("https://github.com/dotnet/corefx/issues/1612")]
+        
         public void Issue261_Decimals()
         {
             var parameters = new DynamicParameters();
@@ -2961,7 +2962,6 @@ end");
             var c = parameters.Get<Decimal>("c");
             c.IsEqualTo(11.884M);
         }
-        [FactUnlessCoreCLR("https://github.com/dotnet/corefx/issues/1612")]
         public void Issue261_Decimals_ADONET_SetViaBaseClass()
         {
             Issue261_Decimals_ADONET(true);
@@ -3120,6 +3120,45 @@ end");
             if (open) conn.Open();
             return conn;
         }
+
+        [FactMySql]
+        public void Issue552_SignedUnsignedBooleans()
+        {
+
+            using (var conn = GetMySqlConnection(true, false, false))
+            {
+                conn.Execute(@"
+CREATE TEMPORARY TABLE IF NOT EXISTS `bar` (
+  `id` INT NOT NULL,
+  `bool_val` BOOL NULL,
+  PRIMARY KEY (`id`));
+  
+  truncate table bar;
+  insert bar (id, bool_val) values (1, null);
+  insert bar (id, bool_val) values (2, 0);
+  insert bar (id, bool_val) values (3, 1);
+  insert bar (id, bool_val) values (4, null);
+  insert bar (id, bool_val) values (5, 1);
+  insert bar (id, bool_val) values (6, 0);
+  insert bar (id, bool_val) values (7, null);
+  insert bar (id, bool_val) values (8, 1);");
+
+                var rows = conn.Query<MySqlHasBool>("select * from bar;").ToDictionary(x => x.Id);
+
+                rows[1].Bool_Val.IsNull();
+                rows[2].Bool_Val.IsEqualTo(false);
+                rows[3].Bool_Val.IsEqualTo(true);
+                rows[4].Bool_Val.IsNull();
+                rows[5].Bool_Val.IsEqualTo(true);
+                rows[6].Bool_Val.IsEqualTo(false);
+                rows[7].Bool_Val.IsNull();
+                rows[8].Bool_Val.IsEqualTo(true);
+            }
+        }
+        class MySqlHasBool {
+            public int Id {get;set;}
+            public bool? Bool_Val {get;set;}
+        }
         [FactMySql]
         public void Issue295_NullableDateTime_MySql_Default()
         {
@@ -3162,6 +3201,30 @@ end");
                 dbObj.Time.Value.Ticks.IsEqualTo(ticks);
                 
             }
+        }
+
+        [FactMySql]
+        public void SO36303462_Tinyint_Bools()
+        {
+            using (var conn = GetMySqlConnection(true, true, true))
+            {
+                try { conn.Execute("drop table SO36303462_Test"); } catch { }
+                conn.Execute("create table SO36303462_Test (Id int not null, IsBold tinyint not null);");
+                conn.Execute("insert SO36303462_Test (Id, IsBold) values (1,1);");
+                conn.Execute("insert SO36303462_Test (Id, IsBold) values (2,0);");
+                conn.Execute("insert SO36303462_Test (Id, IsBold) values (3,1);");
+
+                var rows = conn.Query<SO36303462>("select * from SO36303462_Test").ToDictionary(x => x.Id);
+                rows.Count.IsEqualTo(3);
+                rows[1].IsBold.IsTrue();
+                rows[2].IsBold.IsFalse();
+                rows[3].IsBold.IsTrue();
+            }
+        }
+        class SO36303462
+        {
+            public int Id { get; set; }
+            public bool IsBold { get; set; }
         }
 
         public class Issue426_Test
@@ -3301,7 +3364,51 @@ end");
                 }
             }
         }
-        
+
+        [Fact]
+        public void Issue569_SO38527197_PseudoPositionalParameters_In()
+        {
+            using (var connection = ConnectViaOledb())
+            {
+                int[] ids = { 1, 2, 5, 7 };
+                var list = connection.Query<int>("select * from string_split('1,2,3,4,5',',') where value in ?ids?", new { ids }).AsList();
+                list.Sort();
+                string.Join(",", list).IsEqualTo("1,2,5");
+            }
+        }
+
+        [Fact]
+        public void PseudoPositional_CanUseVariable()
+        {
+            using (var connection = ConnectViaOledb())
+            {
+                int id = 42;
+                var row = connection.QuerySingle("declare @id int = ?id?; select @id as [A], @id as [B];", new { id });
+                int a = (int)row.A;
+                int b = (int)row.B;
+                a.IsEqualTo(42);
+                b.IsEqualTo(42);
+            }
+        }
+        [Fact]
+        public void PseudoPositional_CannotUseParameterMultipleTimes()
+        {
+
+            using (var connection = ConnectViaOledb())
+            {
+                try
+                {
+                    int id = 42;
+                    var row = connection.QuerySingle("select ?id? as [A], ?id? as [B];", new { id });
+                    Assert.Fail();
+                }
+                catch (InvalidOperationException ex) when (ex.Message == "When passing parameters by position, each parameter can only be referenced once")
+                {
+                    // that's a win
+                }
+            }
+        }
+
         [Fact]
         public void PseudoPositionalParameters_ExecSingle()
         {
